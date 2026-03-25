@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A股期权双买策略 - 实盘看板</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text2: #8b949e;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+            --orange: #f0883e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 { font-size: 18px; color: var(--blue); }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            display: inline-block; margin-right: 6px;
+        }
+        .status-dot.live { background: var(--green); animation: pulse 2s infinite; }
+        .status-dot.off { background: var(--red); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .btn {
+            padding: 6px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--card);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        .btn:hover { border-color: var(--blue); color: var(--blue); }
+        .btn-green { border-color: var(--green); color: var(--green); }
+        .btn-green:hover { background: var(--green); color: #000; }
+        .btn-red { border-color: var(--red); color: var(--red); }
+        .btn-red:hover { background: var(--red); color: #fff; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* Layout */
+        .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+        .grid { display: grid; gap: 16px; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .card-title {
+            font-size: 12px;
+            color: var(--text2);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card-value {
+            font-size: 28px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .card-sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        .neutral { color: var(--yellow); }
+
+        /* Signal Indicator */
+        .signal-box {
+            text-align: center;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .signal-entry {
+            background: rgba(63, 185, 80, 0.15);
+            border: 2px solid var(--green);
+            color: var(--green);
+            animation: glow-green 1.5s infinite;
+        }
+        .signal-wait {
+            background: rgba(210, 153, 34, 0.1);
+            border: 2px solid var(--yellow);
+            color: var(--yellow);
+        }
+        .signal-exit {
+            background: rgba(248, 81, 73, 0.15);
+            border: 2px solid var(--red);
+            color: var(--red);
+            animation: glow-red 1.5s infinite;
+        }
+        @keyframes glow-green {
+            0%, 100% { box-shadow: 0 0 5px rgba(63,185,80,0.3); }
+            50% { box-shadow: 0 0 20px rgba(63,185,80,0.6); }
+        }
+        @keyframes glow-red {
+            0%, 100% { box-shadow: 0 0 5px rgba(248,81,73,0.3); }
+            50% { box-shadow: 0 0 20px rgba(248,81,73,0.6); }
+        }
+
+        /* Condition Checklist */
+        .checklist { list-style: none; }
+        .checklist li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+        .checklist li:last-child { border-bottom: none; }
+        .check-icon {
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        .check-pass { background: var(--green); color: #000; }
+        .check-fail { background: var(--border); color: var(--text2); }
+
+        /* Alerts */
+        .alert-panel { max-height: 400px; overflow-y: auto; }
+        .alert-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            border-left: 4px solid;
+        }
+        .alert-critical {
+            background: rgba(248,81,73,0.1);
+            border-left-color: var(--red);
+        }
+        .alert-warning {
+            background: rgba(210,153,34,0.1);
+            border-left-color: var(--yellow);
+        }
+        .alert-info {
+            background: rgba(88,166,255,0.1);
+            border-left-color: var(--blue);
+        }
+        .alert-title { font-weight: 600; margin-bottom: 4px; }
+        .alert-time { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+        /* Events Table */
+        .event-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .event-table th {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 2px solid var(--border);
+            color: var(--text2);
+            font-weight: 500;
+        }
+        .event-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+        .event-table tr:hover { background: rgba(88,166,255,0.05); }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-high { background: rgba(248,81,73,0.2); color: var(--red); }
+        .badge-mid { background: rgba(210,153,34,0.2); color: var(--yellow); }
+        .badge-imminent { background: var(--red); color: #fff; }
+
+        /* Position Panel */
+        .pos-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .pos-item { text-align: center; }
+        .pos-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+        .pos-val { font-size: 20px; font-weight: 600; }
+
+        /* Trade History */
+        .trade-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .trade-table th {
+            text-align: left; padding: 6px 8px;
+            border-bottom: 2px solid var(--border);
+            color: var(--text2);
+        }
+        .trade-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+
+        /* Gauge / Progress bars */
+        .gauge-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .gauge-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 0; margin-bottom: 16px; }
+        .tab {
+            padding: 8px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: var(--text2);
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { border-bottom-color: var(--blue); color: var(--blue); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Select */
+        select {
+            background: var(--card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        /* Notification Toast */
+        .toast-container {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            animation: slideIn 0.3s, fadeOut 0.5s 4.5s forwards;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .toast-critical { background: var(--red); color: #fff; }
+        .toast-warning { background: var(--yellow); color: #000; }
+        .toast-info { background: var(--blue); color: #fff; }
+        .toast-success { background: var(--green); color: #000; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+
+        /* Audio alert */
+        .sound-toggle { cursor: pointer; font-size: 18px; }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .grid-4 { grid-template-columns: repeat(2, 1fr); }
+            .grid-3 { grid-template-columns: 1fr; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .pos-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* Greek table */
+        .greek-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .greek-label { color: var(--text2); }
+        .greek-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    <div style="display:flex;align-items:center;gap:16px;">
+        <h1>A股期权双买策略</h1>
+        <span style="font-size:12px;color:var(--text2)">实盘看板 v1.0</span>
+    </div>
+    <div class="header-right">
+        <select id="underlying-select" onchange="refreshData()">
+            <option value="50ETF">50ETF</option>
+            <option value="300ETF_SH">300ETF(沪)</option>
+            <option value="300ETF_SZ">300ETF(深)</option>
+            <option value="500ETF">500ETF</option>
+            <option value="1000ETF">1000ETF</option>
+        </select>
+        <span class="sound-toggle" id="sound-toggle" onclick="toggleSound()" title="预警声音">&#128264;</span>
+        <span>
+            <span class="status-dot live" id="status-dot"></span>
+            <span id="status-text" style="font-size:13px;">自动刷新中</span>
+        </span>
+        <button class="btn" onclick="refreshData()">手动刷新</button>
+        <button class="btn" id="auto-btn" onclick="toggleAuto()">暂停</button>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Main Content -->
+<div class="container">
+
+    <!-- Top: 4 KPI Cards -->
+    <div class="grid grid-4" style="margin-bottom:16px;">
+        <div class="card">
+            <div class="card-title">标的价格</div>
+            <div class="card-value" id="kpi-price">--</div>
+            <div class="card-sub" id="kpi-underlying">--</div>
+        </div>
+        <div class="card">
+            <div class="card-title">IV分位数</div>
+            <div class="card-value" id="kpi-iv-pct">--%</div>
+            <div class="gauge-bar"><div class="gauge-fill" id="iv-gauge" style="width:0%;background:var(--blue)"></div></div>
+            <div class="card-sub" id="kpi-iv-detail">Call IV: -- / Put IV: --</div>
+        </div>
+        <div class="card">
+            <div class="card-title">跨式价格</div>
+            <div class="card-value" id="kpi-straddle">--</div>
+            <div class="card-sub" id="kpi-straddle-detail">C: -- + P: -- | DTE: --</div>
+        </div>
+        <div class="card">
+            <div class="card-title">账户余额</div>
+            <div class="card-value" id="kpi-balance">--</div>
+            <div class="card-sub" id="kpi-balance-detail">累计盈亏: -- | 交易次数: --</div>
+        </div>
+    </div>
+
+    <!-- Signal + Conditions + Position -->
+    <div class="grid grid-3" style="margin-bottom:16px;">
+
+        <!-- Signal -->
+        <div class="card">
+            <div class="card-title">当前信号</div>
+            <div class="signal-box signal-wait" id="signal-box">
+                等待数据...
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+                <button class="btn btn-green" style="flex:1" onclick="manualOpen()" id="btn-open">手动开仓</button>
+                <button class="btn btn-red" style="flex:1" onclick="manualClose()" id="btn-close" disabled>手动平仓</button>
+            </div>
+        </div>
+
+        <!-- Entry Conditions -->
+        <div class="card">
+            <div class="card-title">入场条件检查</div>
+            <ul class="checklist" id="checklist">
+                <li><span class="check-icon check-fail">-</span> IV分位 &le; 25%</li>
+                <li><span class="check-icon check-fail">-</span> IV绝对值 &le; 20%</li>
+                <li><span class="check-icon check-fail">-</span> 事件日 &le; 5天</li>
+                <li><span class="check-icon check-fail">-</span> DTE 7~30天</li>
+            </ul>
+        </div>
+
+        <!-- Position / Greeks -->
+        <div class="card">
+            <div class="card-title">持仓 / Greeks</div>
+            <div id="position-panel">
+                <div style="text-align:center;color:var(--text2);padding:30px 0;">
+                    当前无持仓
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs: Alerts / Events / History -->
+    <div class="card">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('alerts')">预警消息</div>
+            <div class="tab" onclick="switchTab('events')">事件日历</div>
+            <div class="tab" onclick="switchTab('history')">交易历史</div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="tab-content active" id="tab-alerts">
+            <div class="alert-panel" id="alert-panel">
+                <div style="text-align:center;color:var(--text2);padding:20px;">暂无预警</div>
+            </div>
+        </div>
+
+        <!-- Events -->
+        <div class="tab-content" id="tab-events">
+            <table class="event-table" id="event-table">
+                <thead>
+                    <tr><th>日期</th><th>类型</th><th>事件</th><th>重要性</th><th>倒计时</th></tr>
+                </thead>
+                <tbody id="event-tbody"></tbody>
+            </table>
+        </div>
+
+        <!-- Trade History -->
+        <div class="tab-content" id="tab-history">
+            <div id="trade-summary" style="margin-bottom:12px;font-size:13px;color:var(--text2);"></div>
+            <table class="trade-table">
+                <thead>
+                    <tr><th>时间</th><th>操作</th><th>标的</th><th>行权价</th><th>张数</th><th>盈亏</th><th>收益率</th><th>原因</th></tr>
+                </thead>
+                <tbody id="trade-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let autoRefresh = true;
+let refreshTimer = null;
+let soundEnabled = true;
+let lastAlertCount = 0;
+const REFRESH_MS = 5000;
+
+// ============================================================
+// Audio (simple beep using Web Audio API)
+// ============================================================
+function playBeep(freq = 800, duration = 200) {
+    if (!soundEnabled) return;
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.value = 0.3;
+        osc.start();
+        osc.stop(ctx.currentTime + duration / 1000);
+    } catch(e) {}
+}
+
+function playAlertSound(level) {
+    if (level === 'critical') {
+        playBeep(1000, 300);
+        setTimeout(() => playBeep(1200, 300), 400);
+        setTimeout(() => playBeep(1000, 300), 800);
+    } else if (level === 'warning') {
+        playBeep(600, 200);
+        setTimeout(() => playBeep(800, 200), 300);
+    } else {
+        playBeep(500, 150);
+    }
+}
+
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    document.getElementById('sound-toggle').innerHTML = soundEnabled ? '&#128264;' : '&#128263;';
+}
+
+// ============================================================
+// Toast Notifications
+// ============================================================
+function showToast(msg, level = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${level}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+    playAlertSound(level);
+}
+
+// ============================================================
+// Tab switching
+// ============================================================
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    event.target.classList.add('active');
+}
+
+// ============================================================
+// Auto refresh toggle
+// ============================================================
+function toggleAuto() {
+    autoRefresh = !autoRefresh;
+    const btn = document.getElementById('auto-btn');
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (autoRefresh) {
+        btn.textContent = '暂停';
+        dot.className = 'status-dot live';
+        txt.textContent = '自动刷新中';
+        startAutoRefresh();
+    } else {
+        btn.textContent = '启动';
+        dot.className = 'status-dot off';
+        txt.textContent = '已暂停';
+        if (refreshTimer) clearInterval(refreshTimer);
+    }
+}
+
+function startAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => {
+        if (autoRefresh) refreshData();
+    }, REFRESH_MS);
+}
+
+// ============================================================
+// Format helpers
+// ============================================================
+function fmt(n, d = 2) { return n != null ? Number(n).toFixed(d) : '--'; }
+function fmtPct(n) { return n != null ? Number(n).toFixed(1) + '%' : '--%'; }
+function fmtMoney(n) {
+    if (n == null) return '--';
+    return Number(n).toLocaleString('zh-CN', {maximumFractionDigits: 0});
+}
+function pnlClass(n) { return n > 0 ? 'positive' : n < 0 ? 'negative' : ''; }
+
+// ============================================================
+// Main data fetch
+// ============================================================
+async function refreshData() {
+    const underlying = document.getElementById('underlying-select').value;
+    try {
+        const [mktRes, alertRes, eventRes] = await Promise.all([
+            fetch(`/api/market?underlying=${underlying}`),
+            fetch('/api/alerts'),
+            fetch('/api/events'),
+        ]);
+        const mkt = await mktRes.json();
+        const alerts = await alertRes.json();
+        const events = await eventRes.json();
+
+        updateKPI(mkt);
+        updateSignal(mkt);
+        updateChecklist(mkt.entry_conditions);
+        updatePosition(mkt);
+        updateAlerts(alerts.alerts);
+        updateEvents(events.events);
+    } catch(e) {
+        console.error('Fetch error:', e);
+    }
+}
+
+function updateKPI(data) {
+    const s = data.snapshot;
+    const a = data.account;
+
+    document.getElementById('kpi-price').textContent = fmt(s.underlying_price, 3);
+    document.getElementById('kpi-underlying').textContent =
+        `${s.underlying} | ATM行权价: ${fmt(s.atm_strike, 2)}`;
+
+    const ivPct = s.iv_percentile;
+    document.getElementById('kpi-iv-pct').textContent = fmtPct(ivPct);
+    document.getElementById('kpi-iv-pct').className =
+        'card-value ' + (ivPct <= 25 ? 'positive' : ivPct >= 50 ? 'negative' : 'neutral');
+    document.getElementById('iv-gauge').style.width = Math.min(ivPct, 100) + '%';
+    document.getElementById('iv-gauge').style.background =
+        ivPct <= 25 ? 'var(--green)' : ivPct >= 50 ? 'var(--red)' : 'var(--yellow)';
+    document.getElementById('kpi-iv-detail').textContent =
+        `Call IV: ${(s.iv_call * 100).toFixed(1)}% / Put IV: ${(s.iv_put * 100).toFixed(1)}%`;
+
+    document.getElementById('kpi-straddle').textContent = fmt(s.straddle_price, 4);
+    document.getElementById('kpi-straddle-detail').textContent =
+        `C: ${fmt(s.atm_call_price, 4)} + P: ${fmt(s.atm_put_price, 4)} | DTE: ${s.dte}天`;
+
+    document.getElementById('kpi-balance').textContent = fmtMoney(a.balance);
+    const pnlStr = (a.pnl >= 0 ? '+' : '') + fmtMoney(a.pnl);
+    document.getElementById('kpi-balance-detail').innerHTML =
+        `累计盈亏: <span class="${pnlClass(a.pnl)}">${pnlStr}</span> | 交易次数: ${a.total_trades}`;
+}
+
+function updateSignal(data) {
+    const box = document.getElementById('signal-box');
+    const ec = data.entry_conditions;
+    const pos = data.position;
+    const exit = data.exit_info;
+
+    if (pos && exit && exit.should_exit) {
+        box.className = 'signal-box signal-exit';
+        box.innerHTML = `<div>EXIT: ${exit.signal}</div><div style="font-size:13px;margin-top:6px;">建议立即平仓</div>`;
+        showToast(`出场信号: ${exit.signal}`, 'critical');
+    } else if (!pos && ec.can_enter) {
+        box.className = 'signal-box signal-entry';
+        box.innerHTML = `<div>ENTRY</div><div style="font-size:13px;margin-top:6px;">所有入场条件满足，可开仓</div>`;
+        showToast('入场信号触发！', 'critical');
+    } else if (pos) {
+        const ret = fmt(pos.return_pct, 1);
+        const cls = pos.total_pnl >= 0 ? 'positive' : 'negative';
+        box.className = 'signal-box signal-wait';
+        box.style.borderColor = pos.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        box.innerHTML = `<div>HOLDING</div><div class="${cls}" style="font-size:22px;margin-top:6px;">${ret}%</div>`;
+    } else {
+        box.className = 'signal-box signal-wait';
+        box.innerHTML = `<div>WAIT</div><div style="font-size:13px;margin-top:6px;">等待入场条件</div>`;
+    }
+
+    // Button states
+    document.getElementById('btn-open').disabled = !!pos;
+    document.getElementById('btn-close').disabled = !pos;
+}
+
+function updateChecklist(ec) {
+    if (!ec) return;
+    const items = [
+        { ok: ec.iv_percentile_ok, text: `IV分位 ≤ 25%` },
+        { ok: ec.iv_absolute_ok, text: `IV绝对值 ≤ 20%` },
+        { ok: ec.event_near_ok, text: `事件日 ≤ 5天` },
+        { ok: ec.dte_ok, text: `DTE 7~30天` },
+    ];
+    const html = items.map(it => `
+        <li>
+            <span class="check-icon ${it.ok ? 'check-pass' : 'check-fail'}">${it.ok ? '✓' : '✗'}</span>
+            ${it.text}
+        </li>
+    `).join('');
+    document.getElementById('checklist').innerHTML = html;
+}
+
+function updatePosition(data) {
+    const panel = document.getElementById('position-panel');
+    const pos = data.position;
+    if (!pos) {
+        panel.innerHTML = '<div style="text-align:center;color:var(--text2);padding:30px 0;">当前无持仓</div>';
+        return;
+    }
+    panel.innerHTML = `
+        <div class="pos-grid">
+            <div class="pos-item">
+                <div class="pos-label">行权价</div>
+                <div class="pos-val">${fmt(pos.strike, 2)}</div>
+            </div>
+            <div class="pos-item">
+                <div class="pos-label">张数</div>
+                <div class="pos-val">${pos.contracts}</div>
+            </div>
+            <div class="pos-item">
+                <div class="pos-label">成本</div>
+                <div class="pos-val">${fmtMoney(pos.total_cost)}</div>
+            </div>
+            <div class="pos-item">
+                <div class="pos-label">认购盈亏</div>
+                <div class="pos-val ${pnlClass(pos.call_pnl)}">${fmtMoney(pos.call_pnl)}</div>
+            </div>
+            <div class="pos-item">
+                <div class="pos-label">认沽盈亏</div>
+                <div class="pos-val ${pnlClass(pos.put_pnl)}">${fmtMoney(pos.put_pnl)}</div>
+            </div>
+            <div class="pos-item">
+                <div class="pos-label">总盈亏</div>
+                <div class="pos-val ${pnlClass(pos.total_pnl)}">${fmtMoney(pos.total_pnl)}</div>
+            </div>
+        </div>
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+            <div class="greek-row"><span class="greek-label">Net Delta</span><span class="greek-val">${fmt(pos.net_delta || 0, 3)}</span></div>
+            <div class="greek-row"><span class="greek-label">Gamma</span><span class="greek-val">${fmt(pos.gamma || 0, 4)}</span></div>
+            <div class="greek-row"><span class="greek-label">Theta (日)</span><span class="greek-val negative">${fmtMoney(pos.theta_daily || 0)}</span></div>
+            <div class="greek-row"><span class="greek-label">Vega</span><span class="greek-val">${fmt(pos.vega || 0, 2)}</span></div>
+            <div class="greek-row"><span class="greek-label">入场IV</span><span class="greek-val">${fmtPct((pos.entry_iv || 0) * 100)}</span></div>
+        </div>
+    `;
+}
+
+function updateAlerts(alerts) {
+    const panel = document.getElementById('alert-panel');
+    if (!alerts || alerts.length === 0) {
+        panel.innerHTML = '<div style="text-align:center;color:var(--text2);padding:20px;">暂无预警</div>';
+        return;
+    }
+
+    // Show toasts for new critical alerts
+    if (alerts.length > lastAlertCount) {
+        const newAlerts = alerts.slice(0, alerts.length - lastAlertCount);
+        newAlerts.forEach(a => {
+            if (a.level === 'critical') {
+                showToast(a.title, 'critical');
+            }
+        });
+    }
+    lastAlertCount = alerts.length;
+
+    panel.innerHTML = alerts.map(a => `
+        <div class="alert-item alert-${a.level}">
+            <div class="alert-title">${a.title}</div>
+            <div style="white-space:pre-line;">${a.msg}</div>
+            <div class="alert-time">${a.time}</div>
+        </div>
+    `).join('');
+}
+
+function updateEvents(events) {
+    const tbody = document.getElementById('event-tbody');
+    if (!events || events.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text2);">无近期事件</td></tr>';
+        return;
+    }
+    tbody.innerHTML = events.map(e => `
+        <tr>
+            <td>${e.date}</td>
+            <td>${e.type}</td>
+            <td>${e.desc}</td>
+            <td><span class="badge ${e.importance === '高' ? 'badge-high' : 'badge-mid'}">${e.importance}</span></td>
+            <td>
+                ${e.is_imminent
+                    ? `<span class="badge badge-imminent">${e.days_until}天</span>`
+                    : `${e.days_until}天`
+                }
+            </td>
+        </tr>
+    `).join('');
+}
+
+// ============================================================
+// Trade actions
+// ============================================================
+async function manualOpen() {
+    if (!confirm('确认手动开仓？')) return;
+    try {
+        const res = await fetch('/api/open', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.msg, 'success');
+            refreshData();
+            loadTrades();
+        } else {
+            showToast(data.error, 'warning');
+        }
+    } catch(e) {
+        showToast('开仓请求失败', 'warning');
+    }
+}
+
+async function manualClose() {
+    if (!confirm('确认手动平仓？')) return;
+    try {
+        const res = await fetch('/api/close', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason: '手动平仓'}),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.msg, 'success');
+            refreshData();
+            loadTrades();
+        } else {
+            showToast(data.error, 'warning');
+        }
+    } catch(e) {
+        showToast('平仓请求失败', 'warning');
+    }
+}
+
+async function loadTrades() {
+    try {
+        const res = await fetch('/api/trades');
+        const data = await res.json();
+        const tbody = document.getElementById('trade-tbody');
+        const summary = document.getElementById('trade-summary');
+
+        if (data.summary) {
+            const s = data.summary;
+            summary.innerHTML = `
+                总交易: ${s.total_trades} |
+                胜率: ${fmtPct(s.win_rate * 100)} |
+                总盈亏: <span class="${pnlClass(s.total_pnl)}">${fmtMoney(s.total_pnl)}</span> |
+                最大回撤: <span class="negative">${fmtPct(s.max_drawdown * 100)}</span>
+            `;
+        }
+
+        if (data.log && data.log.length > 0) {
+            tbody.innerHTML = data.log.slice().reverse().map(t => `
+                <tr>
+                    <td>${t.time || '--'}</td>
+                    <td>${t.action}</td>
+                    <td>${t.underlying || '--'}</td>
+                    <td>${fmt(t.strike, 2)}</td>
+                    <td>${t.contracts || '--'}</td>
+                    <td class="${pnlClass(t.pnl)}">${t.pnl != null ? fmtMoney(t.pnl) : '--'}</td>
+                    <td class="${pnlClass(t.return_pct)}">${t.return_pct != null ? fmtPct(t.return_pct) : '--'}</td>
+                    <td>${t.reason || '--'}</td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text2);">暂无交易记录</td></tr>';
+        }
+    } catch(e) {}
+}
+
+// ============================================================
+// Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    refreshData();
+    loadTrades();
+    startAutoRefresh();
+});
+</script>
+
+</body>
+</html>
