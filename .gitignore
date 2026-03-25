@@ -2,4 +2,5 @@ node_modules
 .vitepress/dist
 .vitepress/cache
 .vitepress/.temp
-.DS_Store__pycache__/
+.DS_Store
+__pycache__/
